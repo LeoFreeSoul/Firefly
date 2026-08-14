@@ -1,60 +1,98 @@
-name: Deploy to GitHub Pages
+name: Build and Deploy to Server
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   workflow_dispatch:
 
-# Pages 部署需要的权限
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-# 确保只有一个部署任务同时运行
 concurrency:
-  group: "pages"
+  group: firefly-production
   cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 9.14.4
           run_install: false
-          
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
-      
+        run: pnpm install --frozen-lockfile
+
       - name: Build site
+        env:
+          ASTRO_TELEMETRY_DISABLED: "1"
         run: pnpm run build
 
-      - name: Create .nojekyll file
-        run: touch dist/.nojekyll
-      
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist  # Astro默认构建输出目录
+      - name: Verify build output
+        run: test -f dist/index.html
 
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firefly-dist
+          path: dist
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Deploy to server
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_PORT: ${{ secrets.SERVER_PORT }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          DEPLOY_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+
+          test -n "$SERVER_HOST"
+          test -n "$SERVER_PORT"
+          test -n "$SERVER_USER"
+          test -n "$SSH_PRIVATE_KEY"
+
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          ssh-keyscan -T 15 -p "$SERVER_PORT" -H "$SERVER_HOST" > "$HOME/.ssh/known_hosts"
+
+          tar -C dist -czf firefly-dist.tar.gz .
+          scp -P "$SERVER_PORT" firefly-dist.tar.gz \
+            "$SERVER_USER@$SERVER_HOST:/var/www/firefly-site/upload-$DEPLOY_ID.tar.gz"
+
+          ssh -p "$SERVER_PORT" "$SERVER_USER@$SERVER_HOST" \
+            bash -s -- "$DEPLOY_ID" <<'REMOTE'
+          set -euo pipefail
+          deploy_id="$1"
+          root="/var/www/firefly-site"
+          archive="$root/upload-$deploy_id.tar.gz"
+          release="$root/releases/$deploy_id"
+
+          mkdir -p "$root/releases" "$release"
+          tar -xzf "$archive" -C "$release"
+          test -f "$release/index.html"
+
+          ln -sfn "$release" "$root/current.next"
+          mv -Tf "$root/current.next" "$root/current"
+          rm -f "$archive"
+
+          printf 'Deployed release: %s\n' "$release"
+          REMOTE
+
+      - name: Remove temporary SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
