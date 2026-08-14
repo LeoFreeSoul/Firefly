@@ -17,6 +17,7 @@ import { musicPlayerConfig } from "@/config/musicConfig";
 import I18nKey from "@/i18n/i18nKey";
 import { i18n } from "@/i18n/translation";
 import type { NavBarLink } from "@/types/config";
+import { getCategoryList, getTagList } from "@/utils/content-utils";
 import { getFallbackFormat, getImageFormats } from "@/utils/image-utils";
 import { isHomePage } from "@/utils/layout-utils";
 import { url } from "@/utils/url-utils";
@@ -58,18 +59,29 @@ const hasDisplaySettings =
 
 // 根据 siteConfig.pages 过滤导航栏链接
 const pages = siteConfig.pages;
+const [categories, tags] = await Promise.all([getCategoryList(), getTagList()]);
+const hasCategories = categories.length > 0;
+const hasTags = tags.length > 0;
 
 function isPageEnabled(link: NavBarLink): boolean {
 	if (!link.pageKey) return true;
 	return pages[link.pageKey as keyof typeof pages] !== false;
 }
 
+function hasTaxonomyContent(link: NavBarLink): boolean {
+	if (link.url === "/categories/") return hasCategories;
+	if (link.url === "/tags/") return hasTags;
+	return true;
+}
+
 function filterLinks(link: NavBarLink): NavBarLink | null {
 	if (!link.children) {
-		return isPageEnabled(link) ? link : null;
+		return isPageEnabled(link) && hasTaxonomyContent(link) ? link : null;
 	}
 
-	const filteredChildren = link.children.filter(isPageEnabled);
+	const filteredChildren = link.children
+		.map(filterLinks)
+		.filter((child): child is NavBarLink => child !== null);
 
 	if (filteredChildren.length === 0) return null;
 	if (filteredChildren.length === 1) return filteredChildren[0];

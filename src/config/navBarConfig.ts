@@ -51,7 +51,7 @@ const getDynamicNavBarConfig = (): NavBarConfig => {
 			},
 			{
 				name: "LINUX DO",
-				url: "https://linux.do/u/soul/activity",
+				url: "https://linux.do/u/soul/summary",
 				external: true,
 				icon: "material-symbols:forum-rounded",
 			},

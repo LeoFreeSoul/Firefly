@@ -16,6 +16,7 @@ import type {
 	MobileBottomComponentConfig,
 	WidgetComponentConfig,
 } from "@/types/config";
+import { getCategoryList, getTagList } from "@/utils/content-utils";
 
 interface Props {
 	class?: string;
@@ -59,6 +60,7 @@ const componentMap = {
 const side = (Astro.props.side ||
 	SIDEBAR_SIDE.LEFT) as (typeof SIDEBAR_SIDE)[keyof typeof SIDEBAR_SIDE];
 const className = Astro.props.class;
+const [categories, tags] = await Promise.all([getCategoryList(), getTagList()]);
 
 // 根据 side 属性获取对应的组件列表
 const getComponents = (): (
@@ -81,7 +83,12 @@ const getComponents = (): (
 const filterAndSortComponents = (
 	components: (WidgetComponentConfig | MobileBottomComponentConfig)[],
 ) => {
-	return components.filter((comp) => comp.enable);
+	return components.filter((comp) => {
+		if (!comp.enable) return false;
+		if (comp.type === "categories") return categories.length > 0;
+		if (comp.type === "tags") return tags.length > 0;
+		return true;
+	});
 };
 
 // 分离 top 和 sticky 位置的组件（保持原始数组顺序）

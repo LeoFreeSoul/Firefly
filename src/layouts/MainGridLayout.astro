@@ -28,6 +28,7 @@ import {
 import I18nKey from "@/i18n/i18nKey";
 import { i18n } from "@/i18n/translation";
 import { formatDateToYYYYMMDD } from "@/utils/date-utils";
+import { getCategoryList } from "@/utils/content-utils";
 import { getImageQuality } from "@/utils/image-utils";
 import { getBackgroundImages, isHomePage } from "@/utils/layout-utils";
 import {
@@ -116,7 +117,8 @@ const shouldRenderGradient =
 // 检查是否为首页
 const isHomePageCheck = isHomePage(Astro.url.pathname);
 
-const shouldRenderCategoryBar = !!siteConfig.categoryBar;
+const shouldRenderCategoryBar =
+	!!siteConfig.categoryBar && (await getCategoryList()).length > 0;
 
 // 检查是否在文章详情页
 const isPostPage = !!postSlug;
